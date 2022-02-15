@@ -1,0 +1,56 @@
+#!/Users/utkarshgiri/miniforge3/envs/bin/python
+
+import sys
+import fire
+import rich
+import time
+import invoke
+import socket
+import logging
+import subprocess
+import webbrowser
+from rich.logging import RichHandler
+from fabric import Config, Connection
+from helpers import *
+
+logger = logging.getLogger(__name__)
+logger.propagate = False
+logger.setLevel(logging.DEBUG)
+handler = RichHandler()
+logger.addHandler(handler)
+
+
+def assert_executable_found(client, executables):
+    if not isinstance(executables, list):
+        executables = [executables]
+    for executable in executables:
+        try:
+            result = client.run(f'command -v {executable}', hide=True)
+        except invoke.exceptions.UnexpectedExit:
+            logger.info(f'{executable} not found. Please manually provide remote {executable} path using --executable argument')
+            sys.exit()
+    logger.info('All requirements met. Yay!')
+
+def main(host, user='ugiri', executable=None, browser='chrome', **kwargs):
+    
+    client = Connection(host=host, user=user, forward_agent=True)
+    
+    if executable is None:
+        executable = 'tensorboard'
+    
+    assert_executable_found(client, [executable, 'tmux'])
+    close_instance(client)
+    result = start_session(client, executable, kwargs); time.sleep(4)
+    client.close()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('localhost', 0))
+    s.listen(1)
+    local_port = s.getsockname()[1]
+    s.close()
+    local_notebook_command = 'ssh -N -f -L localhost:{}:localhost:{} {}'.format(local_port, 6006, "{}@{}".format(user, host))
+    subprocess.call(local_notebook_command, shell=True)
+    url='http://localhost:{}'.format(local_port)
+    webbrowser.get(get_browser_driver(browser)).open(url=url.split('ugiri/')[-1])
+if __name__ == '__main__':
+    fire.Fire(main)
+
